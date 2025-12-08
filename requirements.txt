@@ -1,0 +1,32 @@
+# Injection Time Predictor - Python Dependencies
+# 注射时间预测系统 - Python 依赖包列表
+
+# UI Framework
+streamlit>=1.28.0
+
+# Visualization
+plotly>=5.17.0
+
+# Data Processing
+pandas>=2.0.0
+numpy>=1.24.0
+openpyxl>=3.1.0
+
+# Machine Learning
+torch>=2.0.0
+pyro-ppl>=1.8.0
+scikit-learn>=1.3.0
+joblib>=1.3.0
+
+# Installation Instructions:
+# 安装说明：
+#
+# 1. Activate environment (激活环境):
+#    conda activate py310
+#
+# 2. Install all packages (安装所有包):
+#    pip install -r requirements.txt
+#
+# 3. Or install from Tsinghua mirror (或使用清华镜像):
+#    pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+
