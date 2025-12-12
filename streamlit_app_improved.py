@@ -15,7 +15,7 @@ import os
 
 # 页面配置
 st.set_page_config(
-    page_title="InJight - 注射時間預測系統 (改進版)",
+    page_title="InJight - 注射時間預測系統",
     page_icon="💉",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -55,8 +55,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # 標題
-st.markdown('<div class="main-header">💉 InJight 注射時間預測系統</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-header">基於貝葉斯神經網絡的智能預測 | 改進版v2.0 <span class="improvement-badge">✨ 物理約束優化</span></div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">InJight 注射時間預測系統</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-header">基於貝葉斯神經網絡的智能預測', unsafe_allow_html=True)
 
 # ============================================================
 # 載入模型
@@ -103,7 +103,7 @@ def predict_injection_time(temperature, volume, concentration, viscosity,
         temp_map = {"Cool (5°C)": 5.0, "Standard (20°C)": 20.0, "Warm (40°C)": 40.0}
         temperature = temp_map.get(temperature, 20.0)
     
-    # 根據模型類型選擇預測器
+    # 根據模型類型選擇預測器（混合）
     predictor_result = load_hybrid_predictor(model_type)
     if predictor_result[1] is not None:
         raise ValueError(f"模型載入失敗: {predictor_result[1]}")
@@ -185,7 +185,7 @@ with st.sidebar:
         st.metric("RMSE", f"{perf['rmse']:.4f} 秒")
         st.metric("MAE", f"{perf['mae']:.4f} 秒")
         st.metric("R²", f"{perf['r2']:.4f}")
-    except:
+    except Exception as e:
         st.warning("無法載入性能指標")
     
     st.markdown("---")
@@ -220,7 +220,7 @@ with st.sidebar:
             },
             "Density": {
                 "訓練範圍": "0.995 - 1.01",
-                "可外插範圍": "0.8 - 2.0"
+                "可外插範圍": "0.7 - 1.3"
             },
             "Spring K": {
                 "訓練範圍": "0.37 - 0.42",
@@ -360,14 +360,21 @@ with tab1:
                 ci_upper = np.percentile(predictions, 97.5)
                 
                 # 顯示使用的方法
-                method_badge = "🧠 神經網絡 (BNN)" if method == 'bnn' else "🔬 物理公式"
+                method_badge = {
+                    'bnn': "🧠 神經網絡 (BNN)",
+                    'physics': "🔬 物理公式",
+                    'mc': "🧠 MC Dropout"
+                }.get(method, method)
                 level_badge = {
                     'safe': '✅ 安全範圍',
                     'mild': '⚠️ 小外插',
                     'extreme': '🔴 極端外插'
                 }.get(level, level)
                 
-                model_name = "完整模型 (6特徵)" if model_type == 'full' else "簡化模型 (4特徵)"
+                if model_type == 'mc':
+                    model_name = "MC Dropout (6特徵，無物理)"
+                else:
+                    model_name = "完整模型 (6特徵)" if model_type == 'full' else "簡化模型 (4特徵)"
                 st.info(f"**使用模型**: {model_name} | **預測方法**: {method_badge} | **數據範圍**: {level_badge}")
                 
                 # 顯示主要結果
@@ -470,18 +477,18 @@ with tab2:
         base_visc = st.number_input("基準粘度", value=1.5, key="sens_visc")
         base_spring = st.number_input("基準彈簧強度", value=0.4, key="sens_spring")
         
-        # 根據模型類型選擇可變參數
-        if model_type == 'full':
-            available_params = ["Temperature", "Volume", "Concentration", "Viscosity", "Density", "Spring_k_mean"]
-        else:
-            available_params = ["Temperature", "Volume", "Viscosity", "Spring_k_mean"]
-        
-        param_to_vary = st.selectbox(
-            "選擇要變化的參數",
-            available_params
-        )
-        
-        analyze_btn = st.button("🔬 開始分析", type="primary", use_container_width=True)
+    # 根據模型類型選擇可變參數
+    if model_type == 'full':
+        available_params = ["Temperature", "Volume", "Concentration", "Viscosity", "Density", "Spring_k_mean"]
+    else:
+        available_params = ["Temperature", "Volume", "Viscosity", "Spring_k_mean"]
+    
+    param_to_vary = st.selectbox(
+        "選擇要變化的參數",
+        available_params
+    )
+    
+    analyze_btn = st.button("🔬 開始分析", type="primary", use_container_width=True)
     
     with col2:
         st.subheader("分析結果")
@@ -507,14 +514,13 @@ with tab2:
                 # 完整模型才有的參數
                 if model_type == 'full':
                     param_ranges["Concentration"] = np.linspace(0.5, 15, 15)
-                    param_ranges["Density"] = np.linspace(0.8, 2.5, 15)
+                    param_ranges["Density"] = np.linspace(0.7, 1.3, 15)
                     training_ranges["Concentration"] = (0.5, 9.6)
                     training_ranges["Density"] = (0.995, 1.01)
                 
                 values = param_ranges[param_to_vary]
                 means = []
                 stds = []
-                methods = []
                 
                 # 根据模型类型构建base_params
                 base_params = {
@@ -533,17 +539,12 @@ with tab2:
                     params = base_params.copy()
                     params[param_to_vary] = val
                     
-                    # 對完整模型的密度做安全夾緊，避免因默認值過高而整段溫度曲線被判為極端外插 -> 只剩物理曲線
-                    dens_for_pred = params.get("Density", 1.0)
-                    if model_type == 'full':
-                        dens_for_pred = np.clip(dens_for_pred, 0.995, 1.01)
-                    
                     predictions, method, level, _ = predict_injection_time(
                         params["Temperature"],
                         params["Volume"],
                         params.get("Concentration", 2.0),  # 簡化模型使用默認值
                         params["Viscosity"],
-                        dens_for_pred,                      # 夾緊後的密度
+                        params.get("Density", 1.0),
                         params["Spring_k_mean"],
                         num_samples=100,
                         model_type=model_type
@@ -551,34 +552,19 @@ with tab2:
                     
                     means.append(predictions.mean())
                     stds.append(predictions.std())
-                    methods.append(method)
                 
                 # 绘图
                 fig = go.Figure()
                 
-                # 分別繪製BNN和物理公式部分（不同顏色）
-                bnn_mask = np.array([m == 'bnn' for m in methods])
-                physics_mask = ~bnn_mask
-                
-                if np.any(bnn_mask):
-                    fig.add_trace(go.Scatter(
-                        x=values[bnn_mask],
-                        y=np.array(means)[bnn_mask],
-                        mode='lines+markers',
-                        name='神經網絡預測',
-                        line=dict(color='blue', width=2),
-                        marker=dict(size=8, symbol='circle')
-                    ))
-                
-                if np.any(physics_mask):
-                    fig.add_trace(go.Scatter(
-                        x=values[physics_mask],
-                        y=np.array(means)[physics_mask],
-                        mode='lines+markers',
-                        name='物理公式預測',
-                        line=dict(color='red', width=2, dash='dash'),
-                        marker=dict(size=8, symbol='diamond')
-                    ))
+                # 單條「混合模型預測」曲線（已在後端平滑混合）
+                fig.add_trace(go.Scatter(
+                    x=values,
+                    y=np.array(means),
+                    mode='lines+markers',
+                    name='混合模型預測',
+                    line=dict(color='blue', width=2),
+                    marker=dict(size=8, symbol='circle')
+                ))
                 
                 # 添加不確定性區間
                 fig.add_trace(go.Scatter(
@@ -646,7 +632,7 @@ with tab3:
         # 根據模型類型顯示不同輸入
         if model_type == 'full':
             inv_conc = st.number_input("濃度 (Concentration)", value=2.0, min_value=0.3, max_value=15.0, step=0.1, key="inv_conc")
-            inv_dens = st.number_input("密度 (Density)", value=1.1, min_value=0.8, max_value=2.5, step=0.1, key="inv_dens")
+            inv_dens = st.number_input("密度 (Density)", value=1.1, min_value=0.7, max_value=1.3, step=0.1, key="inv_dens")
         else:
             inv_conc = 2.0  # 默認值
             inv_dens = 1.1  # 默認值
